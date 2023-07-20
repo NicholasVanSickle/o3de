@@ -333,40 +333,41 @@ namespace AZ::Reflection
                     AZStd::string groupName = "";
                     int groupCounter = 0;
 
-                    for (auto iter = nodeData.m_classData->m_editData->m_elements.begin(),
-                              endIter = nodeData.m_classData->m_editData->m_elements.end();
-                         iter != endIter;
+                    for (auto iter = nodeData.m_classData->m_editData->m_elements.begin();
+                         iter != nodeData.m_classData->m_editData->m_elements.end();
                          ++iter)
                     {
-                        auto& currElement = *iter;
-
                         //! If this node has group definitions in its element, create the vectors.
-                        if (currElement.m_elementId == AZ::Edit::ClassElements::Group)
+                        if (iter->m_elementId == AZ::Edit::ClassElements::Group)
                         {
-                            AZStd::string_view itemDescription(currElement.m_description);
+                            AZStd::string_view itemDescription(iter->m_description);
 
                             if (!itemDescription.empty())
                             {
                                 // Update groupName to new group's name
-                                groupName = currElement.m_description;
-
-                                AZ::SerializeContext::ClassElement* UIElement = new AZ::SerializeContext::ClassElement();
-                                UIElement->m_editData = &currElement;
-                                UIElement->m_flags = SerializeContext::ClassElement::Flags::FLG_UI_ELEMENT;
-                                StackEntry entry = { nodeData.m_instance,
-                                                     nodeData.m_instance,
-                                                     nodeData.m_classData->m_typeId,
-                                                     nodeData.m_classData,
-                                                     UIElement };
-
+                                groupName = iter->m_description;
                                 nodeData.m_groupEntries.insert(groupName);
-                                nodeData.m_groups.emplace_back(AZStd::make_pair(groupName, AZStd::move(entry)));
 
-                                if (currElement.m_serializeClassElement)
+                                if (iter->m_serializeClassElement != nullptr)
                                 {
-                                    AZStd::string propertyPath = AZStd::string::format(
-                                        "%s/%s", nodeData.m_path.c_str(), currElement.m_serializeClassElement->m_name);
-                                    nodeData.m_propertyToGroupMap.insert({ propertyPath, groupName });
+                                    StackEntry entry = {
+                                        nodeData.m_instance,  nodeData.m_instance, iter->m_serializeClassElement->m_typeId,
+                                        nodeData.m_classData, iter->m_serializeClassElement,
+                                    };
+                                    nodeData.m_groups.emplace_back(AZStd::make_pair(groupName, AZStd::move(entry)));
+                                }
+                                else
+                                {
+                                    AZ::SerializeContext::ClassElement* UIElement = new AZ::SerializeContext::ClassElement();
+                                    UIElement->m_editData = &*iter;
+                                    UIElement->m_flags = SerializeContext::ClassElement::Flags::FLG_UI_ELEMENT;
+                                    StackEntry entry = { nodeData.m_instance,
+                                                         nodeData.m_instance,
+                                                         nodeData.m_classData->m_typeId,
+                                                         nodeData.m_classData,
+                                                         UIElement };
+
+                                    nodeData.m_groups.emplace_back(AZStd::make_pair(groupName, AZStd::move(entry)));
                                 }
                             }
                             else
@@ -383,10 +384,10 @@ namespace AZ::Reflection
                         }
                         else
                         {
-                            if (!groupName.empty() && currElement.m_serializeClassElement)
+                            if (!groupName.empty() && iter->m_serializeClassElement)
                             {
                                 AZStd::string propertyPath =
-                                    AZStd::string::format("%s/%s", nodeData.m_path.c_str(), currElement.m_serializeClassElement->m_name);
+                                    AZStd::string::format("%s/%s", nodeData.m_path.c_str(), iter->m_serializeClassElement->m_name);
                                 nodeData.m_propertyToGroupMap.insert({ propertyPath, groupName });
                             }
                         }
@@ -719,27 +720,12 @@ namespace AZ::Reflection
                             if (groupPair.second.has_value())
                             {
                                 auto& groupStackEntry = groupPair.second.value();
-                                groupStackEntry.m_group = groupPair.first;
-
-                                StackEntry* proxyEntry = nullptr;
                                 if (groupStackEntry.m_classElement->m_editData->m_serializeClassElement)
                                 {
-                                    auto& groupEntry = nodeData.m_groupEntries[groupPair.first];
-                                    for (auto entryIter = groupEntry.begin(), endIter = groupEntry.end();
-                                         !proxyEntry && entryIter != endIter;
-                                         ++entryIter)
-                                    {
-                                        auto& currEntry = *entryIter;
-                                        if (groupStackEntry.m_classElement->m_editData->m_serializeClassElement == currEntry.m_classElement)
-                                        {
-                                            // currEntry.m_classElement->m_editData->m_elementId = 0; // makes bool work
-                                            currEntry.m_typeId == AzTypeInfo<bool*>::Uuid();
-                                            currEntry.m_skipHandler = true;
-                                            proxyEntry = &currEntry;
-                                        }
-                                    }
+                                    groupStackEntry.m_skipHandler = true;
                                 }
-                                m_stack.push_back(proxyEntry != nullptr ? *proxyEntry : groupStackEntry);
+                                m_stack.push_back(groupStackEntry);
+
                                 CacheAttributes();
                                 m_visitor->VisitObjectBegin(*this, *this);
                             }
